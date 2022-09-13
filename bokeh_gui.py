@@ -166,8 +166,8 @@ class SimpleGUI:
         self.figure.on_event(Tap, callback)
 
         # add image
-        self.im_glyph = self.figure.image_rgba('image', image=[rgb2rgba(self.im)], x=0, y=0, dw=self.im.shape[1],
-                                               dh=self.im.shape[0], dilate=False)
+        self.im_glyph = self.figure.image_rgba('image', image=[rgb2rgba(self.im).astype(np.uint8)], x=0, y=0,
+                                               dw=self.im.shape[1], dh=self.im.shape[0], dilate=False)
         # add circles with their text
         colors = ['red' if i!=self.corner else 'blue' for i in range(len(self.cx))]
         self.circles = self.figure.circle(self.cx, self.im.shape[1]-self.cy, radius=self.radii,
@@ -203,7 +203,7 @@ class SimpleGUI:
         self.small_figure.toolbar_location = None
         self.small_figure.x_range.bounds = [0, well.shape[1]]
         self.small_figure.y_range.bounds = [0, well.shape[0]]
-        self.small_figure.image_rgba('image', image=[rgb2rgba(well)], x=0, y=0, dw=well.shape[1],
+        self.small_figure.image_rgba('image', image=[rgb2rgba(well).astype(np.uint8)], x=0, y=0, dw=well.shape[1],
                                      dh=well.shape[0], dilate=True)
 
         self.well_slider = Slider(title='', start=1, end=len(self.cx), step=1, value=1,
@@ -593,7 +593,7 @@ class SimpleGUI:
 
         image = mark_boundaries(self.im, self.mask, color=(1,0,0), mode='thick') if self.page == AUTOMATIC else self.im
 
-        self.figure.renderers[0].data_source.data.update({'image': [rgb2rgba(image)]})
+        self.figure.renderers[0].data_source.data.update({'image': [(rgb2rgba(image)).astype(np.uint8)]})
         self._draw_well()
 
         self.activate_buttons()
