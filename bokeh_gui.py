@@ -24,15 +24,24 @@ logger = logging.getLogger()
 
 
 def log(func):
+    """
+    Logger decoration function for debugging the Bokeh GUI
+    :param func: the function to wrap with the logger
+    :return: the function wrapped with the logger
+    """
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
+        # when debugging, add function name and all input and keyword variables
         args_repr = [repr(a) for a in args]
         kwargs_repr = [f"{k}={v!r}" for k, v in kwargs.items()]
         signature = ", ".join(args_repr + kwargs_repr)
         logger.debug(f"function {func.__name__} called with args {signature}")
+
+        # run the function
         try:
             result = func(*args, **kwargs)
             return result
+        # Bokeh doesn't always stop on exceptions, so this is a way to see where an exception was raised
         except Exception as e:
             logger.exception(f"Exception raised in {func.__name__}. exception: {str(e)}")
             raise e
@@ -40,10 +49,19 @@ def log(func):
 
 
 def segment_sliders(callback):
+    """
+    Generate all the segmentation algorithms' sliders and buttons
+    :param callback: the function to call when sliders are changed
+    :return: a dictionary of sliders and another dictionary of the keys to relevant information
+    """
     buttons = dict()
     keys = dict()
+
+    # for each segmentation algorithm, add the control buttons
     for seg_type in segmentation_types:
         btns = []
+
+        # the following dictionary contains all of the needed sliders
         slider_dict = segmentation_types[seg_type][1]
         for k in slider_dict:
             lst = slider_dict[k]
@@ -56,16 +74,22 @@ def segment_sliders(callback):
     return buttons, keys
 
 
+def _empty_event(event=None):
+    """
+    Helper function (used mainly for debugging) of an empty Bokeh event
+    """
+    pass
+
+
+# constants used in GUI
 SEGMENTATION_TYPES = list(segmentation_types.keys())
 WELLS, AUTOMATIC, FIXES = 0, 1, 2
-poly_draw_text = 'Draw or move ROIs'
-poly_edit_text = 'Change ROI shapes'
+POLY_DRAW_TEXT = 'Draw or move ROIs'
+POLY_EDIT_TEXT = 'Change ROI shapes'
+
+# set to 'trace' in order to follow all possible leads for problems
 settings.log_level('trace')
 settings.py_log_level('trace')
-
-
-def empty_event(event=None):
-    pass
 
 
 class SimpleGUI:
@@ -90,8 +114,8 @@ class SimpleGUI:
         else: self._pix_rad, self._hough_sc = 15, .1
 
         self.im_path = im_path
-        if scale is None:
-            scale = 1500/np.max(plt.imread(im_path).shape)
+        # scale images to the same size (1500 pixels on long end)
+        if scale is None: scale = 1500/np.max(plt.imread(im_path).shape)
         self.scale = scale
 
         # read image and find wells
@@ -105,7 +129,7 @@ class SimpleGUI:
 
         # helper attributes
         self.page = WELLS
-        self._tap_event = empty_event
+        self._tap_event = _empty_event
         self.fixing_wells = False
         self.drawing_new = False
         self.drawn_segments = []
@@ -122,23 +146,24 @@ class SimpleGUI:
         scale = self._hough_sc
 
         # find wells
-        # cx, cy, radii = find_circles(rescale(color.rgb2gray(self.im.copy()), scale/self.scale),
-        #                              15, num_circles=n_circles)
-
         cx, cy, radii = find_circles(rescale(color.rgb2gray(self.im.copy()), scale/self.scale),
                                      self._pix_rad, num_circles=n_circles)
 
         # rescale centers and radii according to scale
         self.cx = (self.scale*cx/scale).astype(int)
-        # self.cx = self.im.shape[0] - self.cx
         self.cy = (self.scale*cy/scale).astype(int)
         self.radii = (self.scale*radii/scale).astype(int)
+        # choose initial corner
         self.corner = np.argmin(self.cy)
+        # reorder wells
         ord = natural_order((self.cx[self.corner], self.cy[self.corner]), self.cx, self.cy)
         self.cx, self.cy, self.radii = self.cx[ord], self.cy[ord], self.radii[ord]
 
     @log
     def _build_layout(self):
+        """
+        Builds the layout of the whole GUI
+        """
         self._build_buttons()
         self._init_plot()
         self._init_small_plot()
@@ -153,6 +178,9 @@ class SimpleGUI:
 
     @log
     def _init_plot(self):
+        """
+        Initializes the (big) image, which will then allow seamless refreshing
+        """
         self.figure = figure(tools='pan, reset', min_border=0,
                              toolbar_location='right', x_axis_location=None, y_axis_location=None,
                              sizing_mode='scale_height')
@@ -193,6 +221,9 @@ class SimpleGUI:
 
     @log
     def _init_small_plot(self):
+        """
+        Initializes the zoom-in images of the wells
+        """
         self.small_figure = figure(min_border=0, tools='', x_axis_location=None,
                                    y_axis_location=None, plot_width=self.button_size,
                                    plot_height=self.button_size)
@@ -206,37 +237,45 @@ class SimpleGUI:
         self.small_figure.image_rgba('image', image=[rgb2rgba(well).astype(np.uint8)], x=0, y=0, dw=well.shape[1],
                                      dh=well.shape[0], dilate=True)
 
+        # add a slider to move across all wells
         self.well_slider = Slider(title='', start=1, end=len(self.cx), step=1, value=1,
                                   sizing_mode='scale_width')
         self.well_slider.on_change('value', lambda x, y, z: self._draw_well())
 
     @log
     def _build_buttons(self):
+        """
+        Builds all of the buttons in the GUI, in the 3 different pages
+        """
         self._pages = {}
 
+        # ==== save button
         self.save_button = Button(label='Save', default_size=150, sizing_mode='scale_width')
         self.save_button.on_click(self.save_event)
         self.save_button.disabled = True
 
+        # ==== open image button
         self.open_button = Button(label='Open new file', default_size=150, sizing_mode='scale_width')
         self.open_button.on_click(self.open_event)
 
         save_row = row([self.save_button, self.open_button])
 
+        # ==== next page button
         self.next_button = Button(label='Next step', default_size=150, sizing_mode='scale_width')
         self.next_button.on_click(self.next_event)
 
+        # ==== restart process button
         self.restart_button = Button(label='Restart process', default_size=150, sizing_mode='scale_width')
         self.restart_button.on_click(lambda: self.next_event(restart=True))
 
         next_row = row([self.next_button, self.restart_button])
 
         # ------------------------------------------------------------------------------- create first page
-        # create button to define mold corner
+        # ==== mold corner definition button
         self.corner_button = Button(label='Mark corner', default_size=150, sizing_mode='scale_width')
         self.corner_button.on_click(self.choose_corner_event)
 
-        # create button to fix placement of circles
+        # ==== button to start fixing circle placements
         self.circ_fix = Button(label='Fix well locations', default_size=150, sizing_mode='scale_width')
         self.circ_fix.on_click(self.fix_well_event)
 
@@ -262,16 +301,17 @@ class SimpleGUI:
         self._pages[AUTOMATIC] = [*aut_buttons]
 
         # ------------------------------------------------------------------------------- create final page
-        self.draw_button = Button(label=poly_draw_text, default_size=150, sizing_mode='scale_width')
+        self.draw_button = Button(label=POLY_DRAW_TEXT, default_size=150, sizing_mode='scale_width')
         self.draw_button.on_click(self.draw_event)
 
-        self.edit_button = Button(label=poly_edit_text, default_size=150, sizing_mode='scale_width')
+        self.edit_button = Button(label=POLY_EDIT_TEXT, default_size=150, sizing_mode='scale_width')
         self.edit_button.on_click(lambda: self.draw_event(edit=True))
 
         self.seg_row = row([self.edit_button, self.draw_button])
 
         self._pages[FIXES] = [self.seg_row, self.restart_button, save_row]
 
+        # ------------------------------------------------------------------------------- put everything together
         # define current buttons and all buttons
         self.buttons_handles = column(self._pages[self.page], width=self.button_size)
         self.buttons = [
@@ -289,39 +329,69 @@ class SimpleGUI:
 
     @log
     def _find_well(self, x, y):
+        """
+        Helper function to find which well is currently selected
+        :param x: x position of the mouse
+        :param y: y position of the mouse
+        :return: the well number which is closest to the event
+        """
         return np.argmin((self.cx-x)**2 + (self.cy-y)**2)
 
     @log
     def _draw_well(self):
+        """
+        Plots the zoom-in version of the current well with the (current) segmentation in red
+        """
+        # controls amount of padding in the zoom-in images
         bd = 0
+
+        # finds currently selected well
         ind = self.well_slider.value - 1
+
+        # slices the image for the current well and corresponding segmentation mask
         well = self.im[self.cy[ind] - self.radii[ind] + bd:self.cy[ind] + self.radii[ind] - bd,
                        self.cx[ind] - self.radii[ind] + bd:self.cx[ind] + self.radii[ind] - bd]
         mask = self.mask[self.cy[ind] - self.radii[ind] + bd:self.cy[ind] + self.radii[ind] - bd,
                          self.cx[ind] - self.radii[ind] + bd:self.cx[ind] + self.radii[ind] - bd]
+        # mark the segmentation of the image
         well_marked = mark_boundaries(well, mask, color=(1, 0, 0), mode='thick')
+        # controls how strong the segmentation will look on the zoom-in
         alpha = .5
         if self.page != WELLS:
-            self.small_figure.renderers[0].data_source.data.update({'image': [rgb2rgba((1-alpha)*well +
-                                                                                       alpha*well_marked)]})
+            self.small_figure.renderers[0].data_source.data.update({
+                'image': [rgb2rgba((1-alpha)*well + alpha*well_marked).astype(np.uint8)]
+            })
         else:
-            self.small_figure.renderers[0].data_source.data.update({'image': [rgb2rgba(well)]})
+            self.small_figure.renderers[0].data_source.data.update({'image': [rgb2rgba(well).astype(np.uint8)]})
 
     @log
     def _convert_to_poly(self):
+        """
+        Converts the segmentations from masks into editable polygons
+        """
         poly_xs = []
         poly_ys = []
         for i in range(len(self.cells)):
             if np.any(self.cells[i]):
+                # find contour lines in mask
                 conts = find_contours(self.cells[i], 0, fully_connected='high', positive_orientation='high')
                 for cont in conts:
+                    # approximate contour with polygon
                     co = approximate_polygon(cont, tolerance=1)
                     poly_xs.append(co[:, 1] + self.cx[i] - self.radii[i])
                     poly_ys.append(self.im.shape[1] - (co[:, 0] + self.cy[i] - self.radii[i]) + 3)
+        # add all polygons to the GUI
         self.polygons.data_source.data.update({'xs': poly_xs, 'ys': poly_ys})
 
     @log
     def _convert_to_mask(self):
+        """
+        Converts editable polygons back into masks for area calculation and saving
+        :return: wells - a list of the well numbers corresponding to the areas
+                 areas - a list of the areas of the cells, according to the segmentation
+                 mask - a np.ndarray, with the same shape as the full image, which is a mask of all segmentations
+                        together
+        """
         mask = np.zeros(self.mask.shape)
         wells, areas = [], []
         for i in range(len(self.polygons.data_source.data['xs'])):
@@ -348,8 +418,13 @@ class SimpleGUI:
 
     @log
     def _save_to_file(self, file):
+        """
+        Saves all of the segmentation data into files
+        :param file: the file name (excluding extensions) used to save
+        """
         wells, areas, mask = self._convert_to_mask()
         self._find_conversion_ratio()
+        # write areas to a .csv file
         with open(file + '.csv', 'w') as f:
             writer = csv.writer(f)
             writer.writerow(['well',
@@ -367,6 +442,8 @@ class SimpleGUI:
                                  self.cy[wells[i]-1]])
             writer.writerow(['Misc:', 'Calc. length (px):', self.calc_len])
             writer.writerow(['', 'px/micron ratio:', self.pix2micron])
+
+        # create image with segmentation labelings (numbers and segmentation boundary)
         fig = plt.figure(dpi=300)
         ax = plt.Axes(fig, [0., 0., 1., 1.])
         ax.set_axis_off()
@@ -383,6 +460,7 @@ class SimpleGUI:
             ax.text(cx - rad, cy - rad, str(i + 1), fontsize=4, color='r')
         plt.savefig(file + '.jpg')
 
+        # save data needed in order to load back all data (not used at the moment)
         pkl_path = str(Path(file).parent) + '/.__raw_segmented_data/'
         Path(pkl_path).mkdir(exist_ok=True)
         with open(pkl_path + Path(file).name + '.pkl', 'wb') as f: pickle.dump(data, f)
@@ -399,6 +477,10 @@ class SimpleGUI:
 
     @log
     def fix_well_event(self):
+        """
+        Event for when the "Fix well locations" button is pressed
+        """
+        # if the button was previously pressed, return everything back to the normal state
         if self.fixing_wells:
             # remove drag tool from toolbar
             self.figure.tools = self.figure.tools[:-1]
@@ -419,6 +501,8 @@ class SimpleGUI:
             self.circ_fix.label = 'Fix well locations'
 
             self.refresh_GUI()
+
+        # if the button is unpressed, move to fixing locations mode
         else:
             # change flag and block all buttons
             self.fixing_wells = True
@@ -569,8 +653,8 @@ class SimpleGUI:
 
             # return button to original state and activate buttons
             self.drawing_new = not self.drawing_new
-            if edit: self.edit_button.label = poly_edit_text
-            else: self.draw_button.label = poly_draw_text
+            if edit: self.edit_button.label = POLY_EDIT_TEXT
+            else: self.draw_button.label = POLY_DRAW_TEXT
             self.activate_buttons()
 
     @log
@@ -627,7 +711,7 @@ class SimpleGUI:
 
             self._draw_well()
             self.activate_buttons()
-            self._tap_event = empty_event
+            self._tap_event = _empty_event
         self._tap_event = callback
 
     @log
@@ -652,9 +736,6 @@ class SimpleGUI:
 # curdoc().on_session_destroyed(lambda _: sys.exit())
 
 if __name__ == '__main__':
-    # os.system('bokeh serve --show bokeh_gui.py')
-    # im_path = 'images/x4 image 1 well 2 DOX 100 2nd plate.jpg'
-    # f = SimpleGUI(im_path=im_path)
     root = Tk()
     root.deiconify()
     root.lift()
