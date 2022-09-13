@@ -225,7 +225,7 @@ def find_circles(im: np.ndarray, radius: int, num_circles: int=35):
     hough_radii = [radius]
     hough_res = hough_circle(edges, hough_radii)
     accums, cx, cy, radii = hough_circle_peaks(hough_res, hough_radii, total_num_peaks=num_circles,
-                                               min_xdistance=int(radius*1.5), min_ydistance=int(radius*1.5),
+                                               min_xdistance=int(radius), min_ydistance=int(radius),
                                                normalize=True)
 
     cx, cy, radii = np.array(cx), np.array(cy), np.array(radii)
@@ -255,8 +255,7 @@ def natural_order(corner: tuple, cx: np.ndarray, cy: np.ndarray):
 
 
 def well_intensity(well_int: np.ndarray):
-    thresh = well_int[0, 0]
-    well_int[well_int > thresh] = thresh
-    well_int = 1-(well_int - np.min(well_int))/(np.max(well_int) - np.min(well_int))
-    intensity = np.sum(well_int)
+    thresh = 1-well_int[0, 0]
+    well_int = 1 - (well_int - np.min(well_int))/(np.max(well_int) - np.min(well_int))
+    intensity = np.sum(well_int[well_int != thresh])
     return intensity

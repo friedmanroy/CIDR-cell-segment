@@ -81,6 +81,14 @@ def _empty_event(event=None):
     pass
 
 
+def _get_radius(n_wells: int):
+    if n_wells == 7: pix_rad, hough_sc = 9, .1
+    elif n_wells == 21: pix_rad, hough_sc = 9, .2
+    elif n_wells == 25: pix_rad, hough_sc = 11, .3
+    else: pix_rad, hough_sc = 15, .1
+    return pix_rad,hough_sc
+
+
 # constants used in GUI
 SEGMENTATION_TYPES = list(segmentation_types.keys())
 WELLS, AUTOMATIC, FIXES = 0, 1, 2
@@ -107,11 +115,7 @@ class SimpleGUI:
         :param scale: the scale of the image to be shown
         :param n_wells: number of wells in the mold
         """
-
-        if n_wells == 7: self._pix_rad, self._hough_sc = 9, .1
-        elif n_wells == 21: self._pix_rad, self._hough_sc = 9, .2
-        elif n_wells == 25: self._pix_rad, self._hough_sc = 11, .3
-        else: self._pix_rad, self._hough_sc = 15, .1
+        self._pix_rad, self._hough_sc = _get_radius(n_wells)
 
         self.im_path = im_path
         # scale images to the same size (1500 pixels on long end)
@@ -548,24 +552,25 @@ class SimpleGUI:
         root.deiconify()
         root.lift()
         root.focus_force()
-        path = filedialog.askopenfilename(filetypes=[('JPG', '*.jpg')])
+        path = filedialog.askopenfilename(filetypes=[('images', '.jpg .tif'), ('JPG', '*.jpg')])
         root.destroy()
 
         root = Tk()
         root.deiconify()
         root.lift()
         root.focus_force()
-        n_vals = simpledialog.askinteger('Number of Wells', 'Number of wells to use:', parent=root, initialvalue=35)
+        n_wells = simpledialog.askinteger('Number of Wells', 'Number of wells to use:', parent=root, initialvalue=35)
         root.destroy()
 
-        if path is not None:
+        if path != '':
             try:
                 self.disable_buttons()
                 self.circles.visible = False
                 self.text.visible = False
 
+                self._pix_rad, self._hough_sc = _get_radius(n_wells)
                 self.im = read_im(path, self.scale, match_size=self.im.shape)
-                self._find_circles(n_vals)
+                self._find_circles(n_wells)
                 self.mask = None
 
                 # add new image to plot
