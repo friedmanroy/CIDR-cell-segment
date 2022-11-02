@@ -7,3 +7,4 @@ matplotlib==3.5.1
 scikit-image==0.19.2
 scipy==1.8.0
 bokeh==2.1.1
+Jinja2==3.0.3
