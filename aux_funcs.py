@@ -37,6 +37,9 @@ def read_im(im_path: str, scale: float=1, match_size: tuple=None):
     scale = match_size[np.argmax(image.shape)]/image.shape[np.argmax(image.shape)]
     image = rescale(color.rgb2gray(image) if im_path.endswith('jpg') else image, scale)
     image = np.pad(image, [[0, match_size[0]-image.shape[0]], [0, match_size[1]-image.shape[1]]])
+
+    low, high = np.quantile(image, .001), np.quantile(image, .999)
+    image = np.clip((image - low)/(high - low), 0, 1)
     return color.gray2rgb(image)
 
 
@@ -215,11 +218,11 @@ def find_circles(im: np.ndarray, radius: int, num_circles: int=35):
                 2. cy: a list of the y-coordinates of the centers of the found wells
                 3. radii: a list of the radii of the found wells
     """
-    im = difference_of_gaussians(im, low_sigma=0, high_sigma=2)
-    im = equalize_adapthist((im - np.min(im)) / (np.max(im) - np.min(im)), kernel_size=30)
+    # im = difference_of_gaussians(im, low_sigma=0, high_sigma=2)
+    # im = equalize_adapthist(im, kernel_size=30)
 
     # get image edges
-    edges = canny(im, sigma=.3, low_threshold=.4, high_threshold=.7, use_quantiles=True)
+    edges = canny(im, sigma=.3, low_threshold=.3, high_threshold=.7, use_quantiles=True)
 
     # find wells
     hough_radii = [radius]

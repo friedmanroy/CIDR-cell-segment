@@ -82,11 +82,11 @@ def _empty_event(event=None):
 
 
 def _get_radius(n_wells: int):
-    if n_wells == 7: pix_rad, hough_sc = 9, .1
-    elif n_wells == 21: pix_rad, hough_sc = 9, .2
-    elif n_wells == 25: pix_rad, hough_sc = 11, .3
-    else: pix_rad, hough_sc = 15, .1
-    return pix_rad,hough_sc
+    if n_wells == 7: pix_rad, hough_sc = 18, .2
+    elif n_wells == 21: pix_rad, hough_sc = 11, .2
+    elif n_wells == 25: pix_rad, hough_sc = 7, .2
+    else: pix_rad, hough_sc = 30, .2
+    return pix_rad
 
 
 # constants used in GUI
@@ -115,8 +115,6 @@ class SimpleGUI:
         :param scale: the scale of the image to be shown
         :param n_wells: number of wells in the mold
         """
-        self._pix_rad, self._hough_sc = _get_radius(n_wells)
-
         self.im_path = im_path
         # scale images to the same size (1500 pixels on long end)
         if scale is None: scale = 1500/np.max(plt.imread(im_path).shape)
@@ -124,7 +122,7 @@ class SimpleGUI:
 
         # read image and find wells
         self.im = read_im(im_path, scale)
-        self._find_circles(n_wells)
+        self._find_circles(n_wells, _get_radius(n_wells))
         self.mask = None
 
         # define default lengths
@@ -141,17 +139,18 @@ class SimpleGUI:
 
         # build layout
         self._build_layout()
+        self.update_wells()
 
     @log
-    def _find_circles(self, n_circles: int):
+    def _find_circles(self, n_circles: int, well_rad: int=27):
         """
         Find the well placement and update in the GUI
         """
-        scale = self._hough_sc
+        scale = .2
 
         # find wells
         cx, cy, radii = find_circles(rescale(color.rgb2gray(self.im.copy()), scale/self.scale),
-                                     self._pix_rad, num_circles=n_circles)
+                                     well_rad, num_circles=n_circles)
 
         # rescale centers and radii according to scale
         self.cx = (self.scale*cx/scale).astype(int)
@@ -276,6 +275,18 @@ class SimpleGUI:
 
         # ------------------------------------------------------------------------------- create first page
         # ==== mold corner definition button
+
+        self.num_wells_spinn = Spinner(title='Number of wells:', low=1, high=50, step=1, value=35,
+                                       sizing_mode='scale_width')
+        self.num_wells_spinn.on_change('value', lambda x, y, z: self._rad_setter())
+
+        self.well_rad_spinn = Spinner(title='Well radius:', low=1, high=100, step=1,
+                                      value=_get_radius(self.standard_nwells), sizing_mode='scale_width')
+        self.well_rad_spinn.on_change('value', lambda x, y, z: _empty_event())
+
+        self.find_button = Button(label='Find wells', default_size=150, sizing_mode='scale_width')
+        self.find_button.on_click(self.update_wells)
+
         self.corner_button = Button(label='Mark corner', default_size=150, sizing_mode='scale_width')
         self.corner_button.on_click(self.choose_corner_event)
 
@@ -284,8 +295,9 @@ class SimpleGUI:
         self.circ_fix.on_click(self.fix_well_event)
 
         # create measurement page
-        self.meas_row = row([self.corner_button])
-        self._pages[WELLS] = [self.meas_row, self.circ_fix, next_row, save_row]
+        self.meas_row = row([self.corner_button, self.circ_fix, self.find_button])
+        self.well_row = row([self.num_wells_spinn, self.well_rad_spinn])
+        self._pages[WELLS] = [self.meas_row, self.well_row, next_row, save_row]
 
         # ------------------------------------------------------------------------------- create second page
         # define buttons used in all schemes
@@ -470,6 +482,11 @@ class SimpleGUI:
         with open(pkl_path + Path(file).name + '.pkl', 'wb') as f: pickle.dump(data, f)
 
     @log
+    def _rad_setter(self):
+        val = _get_radius(self.num_wells_spinn.value)
+        self.well_rad_spinn.value = val
+
+    @log
     def disable_buttons(self):
         for button in self.buttons: button.disabled = True
 
@@ -547,6 +564,18 @@ class SimpleGUI:
             self._save_to_file(f.name)
 
     @log
+    def update_wells(self):
+        self.circles.visible = False
+        self.text.visible = False
+        self._find_circles(self.num_wells_spinn.value, well_rad=self.well_rad_spinn.value)
+
+        colors = ['red' if i != self.corner else 'blue' for i in range(len(self.cx))]
+        self.circles = self.figure.circle(self.cx, self.im.shape[1] - self.cy, radius=self.radii,
+                                          fill_alpha=0, line_color=colors, line_width=2.5)
+        self.text = self.figure.text(x=self.cx - self.radii + 5, y=self.im.shape[1] - (self.cy - self.radii + 5),
+                                     text=np.arange(len(self.cx)) + 1, text_color='red')
+
+    @log
     def open_event(self):
         root = Tk()
         root.deiconify()
@@ -565,12 +594,11 @@ class SimpleGUI:
         if path != '':
             try:
                 self.disable_buttons()
-                self.circles.visible = False
-                self.text.visible = False
+                # self.circles.visible = False
+                # self.text.visible = False
 
-                self._pix_rad, self._hough_sc = _get_radius(n_wells)
                 self.im = read_im(path, self.scale, match_size=self.im.shape)
-                self._find_circles(n_wells)
+                # self._find_circles(n_wells, well_rad=self.well_rad_spinn)
                 self.mask = None
 
                 # add new image to plot
@@ -581,12 +609,13 @@ class SimpleGUI:
                 self.figure.y_range.bounds = [0, self.im.shape[0]]
                 self.figure.x_range.range_padding = self.figure.y_range.range_padding = 0
 
-                # add circles with their text
-                colors = ['red' if i != self.corner else 'blue' for i in range(len(self.cx))]
-                self.circles = self.figure.circle(self.cx, self.im.shape[1] - self.cy, radius=self.radii,
-                                                  fill_alpha=0, line_color=colors, line_width=2.5)
-                self.text = self.figure.text(x=self.cx - self.radii + 5, y=self.im.shape[1]-(self.cy - self.radii + 5),
-                                             text=np.arange(len(self.cx)) + 1, text_color='red')
+                # # add circles with their text
+                # colors = ['red' if i != self.corner else 'blue' for i in range(len(self.cx))]
+                # self.circles = self.figure.circle(self.cx, self.im.shape[1] - self.cy, radius=self.radii,
+                #                                   fill_alpha=0, line_color=colors, line_width=2.5)
+                # self.text = self.figure.text(x=self.cx - self.radii + 5, y=self.im.shape[1]-(self.cy - self.radii + 5),
+                #                              text=np.arange(len(self.cx)) + 1, text_color='red')
+
                 self.next_event(restart=True, ask=False)
                 self.activate_buttons()
 
@@ -749,18 +778,18 @@ if __name__ == '__main__':
     root.destroy()
 
     if path != '':
-        root = Tk()
-        root.deiconify()
-        root.lift()
-        root.focus_force()
-        n_vals = simpledialog.askinteger('Number of Wells', 'Number of wells to use:', parent=root, initialvalue=35)
-        root.destroy()
+        # root = Tk()
+        # root.deiconify()
+        # root.lift()
+        # root.focus_force()
+        # n_vals = simpledialog.askinteger('Number of Wells', 'Number of wells to use:', parent=root, initialvalue=35)
+        # root.destroy()
 
-        if n_vals is not None:
-            f = SimpleGUI(im_path=path, n_wells=n_vals)
-            server = Server({'/': f.serve})
-            server.start()
+        # if n_vals is not None:
+        f = SimpleGUI(im_path=path)
+        server = Server({'/': f.serve})
+        server.start()
 
-            server.io_loop.add_callback(server.show, "/")
-            server.io_loop.start()
-            server.run_until_shutdown()
+        server.io_loop.add_callback(server.show, "/")
+        server.io_loop.start()
+        server.run_until_shutdown()
